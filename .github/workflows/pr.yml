@@ -1,0 +1,173 @@
+# Runs on every pull request: calls the shared `ci.yml` quality gate, then --
+# only for PRs from this repository (never forks) and only if CI passed --
+# assumes the read-only plan role via OIDC, runs `terraform plan` against
+# `environments/prod`, and posts/updates a single sticky PR comment with the
+# result.
+#
+# `concurrency` below shares its group name with cd.yml's, on purpose: both
+# workflows take S3 native locks (use_lockfile) on the same state object
+# (environments/prod), and a plan and an apply racing for the same lock
+# fails loudly (PreconditionFailed / "Error acquiring the state lock")
+# rather than queueing. A shared group serializes every plan/apply across
+# both workflows so only one runs at a time.
+name: pr
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.11.4"
+  PLAN_COMMENT_MARKER: "<!-- sia-iac:plan -->"
+
+jobs:
+  ci:
+    name: ci
+    uses: ./.github/workflows/ci.yml
+
+  plan:
+    name: plan
+    needs: ci
+    # Fork PRs cannot be trusted with credentials to this AWS account: OIDC
+    # role assumption is skipped outright rather than relying only on
+    # `pull_request` (vs. `pull_request_target`) semantics.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: iac-terraform-state
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (plan role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      # Reuses scripts/tf-init.sh so the local and CI init commands can
+      # never drift apart.
+      - name: terraform init (environments/prod)
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: ./scripts/tf-init.sh
+
+      # Plan output is written straight to a file, never interpolated into
+      # a shell string -- Terraform resource attributes are attacker-
+      # influenceable via the PR diff itself, so it must never pass through
+      # `${{ }}` into a `run:` block.
+      - name: terraform plan (environments/prod)
+        id: plan_prod
+        working-directory: environments/prod
+        env:
+          TF_VAR_lambda_exec_boundary_arn: ${{ vars.LAMBDA_EXEC_BOUNDARY_ARN }}
+          TF_VAR_ecr_repository_url: ${{ vars.ECR_REPOSITORY_URL }}
+          TF_VAR_image_tag: "sha-${{ github.event.pull_request.head.sha }}"
+          TF_VAR_ops_email: ${{ vars.OPS_EMAIL }}
+          TF_VAR_sender_email: ${{ vars.SENDER_EMAIL }}
+        run: |
+          set +e
+          terraform plan -no-color -input=false >"${GITHUB_WORKSPACE}/plan-prod.txt" 2>&1
+          echo "exitcode=$?" >>"$GITHUB_OUTPUT"
+          set -e
+          cat "${GITHUB_WORKSPACE}/plan-prod.txt"
+
+      - name: Upload plan artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-environments-prod
+          path: plan-prod.txt
+          retention-days: 30
+
+      # Reads the plan file from disk (fs.readFileSync) and passes it to the
+      # GitHub API as a plain JS string -- never re-entered into a shell, so
+      # backticks/`$(...)` in the plan output render literally in the
+      # comment instead of executing.
+      - name: Post sticky plan comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PLAN_EXIT_CODE: ${{ steps.plan_prod.outputs.exitcode }}
+          PLAN_COMMENT_MARKER: ${{ env.PLAN_COMMENT_MARKER }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const marker = process.env.PLAN_COMMENT_MARKER;
+            const maxLen = 30000;
+            const exitCode = process.env.PLAN_EXIT_CODE;
+
+            let text;
+            try {
+              text = fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE, 'plan-prod.txt'), 'utf8');
+            } catch (err) {
+              text = `(failed to read plan-prod.txt: ${err.message})`;
+            }
+
+            let truncated = false;
+            if (text.length > maxLen) {
+              text = text.slice(0, maxLen);
+              truncated = true;
+            }
+
+            const status = exitCode === '0' ? 'Plan succeeded' : `Plan failed (exit ${exitCode})`;
+            const lines = [
+              marker,
+              '### Terraform Plan — `environments/prod`',
+              `**${status}**`,
+              '',
+              '```diff',
+              text,
+              '```',
+            ];
+            if (truncated) {
+              lines.push('', '_Output truncated at 30000 characters — see the `terraform-plan-environments-prod` workflow artifact for the full plan._');
+            }
+            const body = lines.join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(
+              (c) => c.user.type === 'Bot' && c.body && c.body.startsWith(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Fail job if plan errored
+        if: steps.plan_prod.outputs.exitcode != '0'
+        run: exit 1

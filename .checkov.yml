@@ -1,0 +1,63 @@
+framework: [terraform]
+compact: true
+skip-check:
+  # --- bootstrap/ S3 state bucket ---
+  - CKV_AWS_18    # Access logging: the audit trail is CloudTrail S3 data events; a log bucket would itself need logging (regress).
+  - CKV_AWS_144   # Cross-region replication: single-region scope; versioning + re-apply is the accepted recovery path.
+  - CKV_AWS_145   # SSE-KMS: bucket uses SSE-S3/AES256; no CMK in scope and both OIDC roles would need kms grants on it.
+  - CKV_AWS_300   # Abort-incomplete-upload lifecycle rule: state objects are single-part and tiny.
+  - CKV2_AWS_61   # Lifecycle config: state versions are retained indefinitely on purpose; expiry would defeat state recovery.
+  - CKV2_AWS_62   # Event notifications: no consumer exists for state-bucket events.
+
+  # --- bootstrap/ ECR repository ---
+  - CKV_AWS_136   # ECR KMS: repo uses AES256, same no-CMK-in-scope reasoning as the state bucket (CKV_AWS_145).
+
+  # --- bootstrap/ OIDC-trusted roles (plan, apply) ---
+  - CKV_AWS_60    # Role assumable by a federated principal: that IS the OIDC design; the aud+sub StringEquals conditions are the control.
+  - CKV_AWS_61    # Wildcard in assume-role policy: sub is pinned with StringEquals; no wildcard remains.
+  - CKV_AWS_109   # Permissions management without constraints: the apply role must create the Lambda exec role; constrained by role-path + PermissionsBoundary condition.
+  - CKV_AWS_111   # Write access without constraints: the Lambda/schedule/SES/SNS/alarm resources don't exist before creation, so ARNs can't be pre-enumerated; capped by the apply-role boundary.
+  - CKV_AWS_355   # "*" resource for restrictable actions: ecr:GetAuthorizationToken and ssm:DescribeParameters are not resource-scopable at all (AWS always evaluates them against "*").
+
+  # --- bootstrap/ IAM permissions-boundary documents (lambda_exec_boundary, apply_boundary) ---
+  # A permissions boundary's entire purpose is to be a broad *ceiling*
+  # ("allow most things, explicitly deny the sensitive few: iam/
+  # organizations/account and the anchor roles themselves") -- real
+  # least-privilege comes from the intersection with each role's identity
+  # policy, which checkov scores separately. Static analysis of the
+  # boundary document alone cannot see that intersection, so it
+  # correctly-but-uselessly flags the ceiling as if it were a grant.
+  - CKV2_AWS_40   # Full IAM privileges: boundary ceiling, not a grant -- see block comment.
+  - CKV_AWS_107   # Credentials exposure: boundary ceiling, not a grant -- see block comment.
+  - CKV_AWS_108   # Data exfiltration: boundary ceiling / plan role's read-only Get*/List* -- see block comment.
+  - CKV_AWS_110   # Privilege escalation: boundary ceiling; real constraint is the apply role's own scoped identity policy -- see block comment.
+  - CKV_AWS_1     # "*-*" admin privileges: boundary ceiling, not a grant -- see block comment.
+  - CKV_AWS_356   # Wildcard resource for restrictable actions: boundary ceiling / non-scopable read actions -- see block comment.
+  - CKV_AWS_49    # Wildcard actions: boundary ceiling, not a grant -- see block comment.
+
+  # --- modules/lambda-container-function ---
+  - CKV_AWS_338   # 1-year log retention: default is 14 days for cost; no per-caller override exists (single function, no config.json-style opt-in surface).
+  - CKV_AWS_158   # CloudWatch log group CMK: no CMK in scope; logs are non-sensitive by convention.
+  - CKV_AWS_117   # VPC attachment: the function calls AWS APIs + an external HTTPS site only; VPC adds NAT cost and cold-start with no security gain here.
+  - CKV_AWS_116   # DLQ: schedule retry_policy.maximum_retry_attempts=0 by design (a retried scrape risks a duplicate email); no async invoker exists for a DLQ to catch.
+  - CKV_AWS_173   # CMK for env vars: env vars carry a sender email, an SES configuration-set name, and a public asset URL -- none secret.
+  - CKV_AWS_50    # X-Ray tracing: not needed for a single-function, non-distributed invocation.
+  - CKV_AWS_272   # Code signing: no signing profile provisioned; PR review + branch protection is the source-integrity control.
+
+  # --- environments/prod/ssm.tf ---
+  - CKV_AWS_337   # SSM CMK: parameter is type String, non-secret config (courses/filters/recipients); no CMK in scope.
+  - CKV2_AWS_34   # SSM parameter encryption (v2 check, same intent as CKV_AWS_337).
+
+  # --- environments/prod/monitoring.tf, schedule.tf ---
+  - CKV_AWS_26    # SNS topic not KMS-encrypted: sia-ops-alerts carries only alarm names/state, no sensitive data; no CMK in scope.
+  - CKV_AWS_297   # EventBridge Scheduler not KMS-encrypted: cron expressions and target ARNs are not sensitive; no CMK in scope.
+
+  # --- environments/prod/email_assets.tf ---
+  # Deliberately public-read (assets/* prefix only) so the seat-alert
+  # email's <img> tag resolves for every recipient's mail client -- Gmail
+  # does not render data: URIs, disqualifying inlining, and this repo's
+  # audience is Gmail/unal.edu.co-heavy (design.md "Hosting decision").
+  - CKV_AWS_54    # S3 block-public-policy: the bucket policy IS the intended public-read grant, scoped to assets/* only -- see main comment above.
+  - CKV_AWS_56    # S3 restrict-public-buckets: same -- public read is the point, narrowly scoped.
+  - CKV_AWS_21    # Bucket versioning: the one object (the logo PNG) is a deterministic, content-addressed build output (scripts/build-logo-asset.sh); a code revert + re-apply reproduces the exact same object, unlike Terraform state where versioning backs native S3 locking.
+  - CKV2_AWS_6    # "S3 bucket should have a Public Access block": aws_s3_bucket_public_access_block.email_assets IS present and references this bucket -- checkov graph-linkage false positive observed locally (no project .tflint.hcl/.checkov.yml existed yet when first observed); re-verify if it recurs once this file is the one actually loaded.

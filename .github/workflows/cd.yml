@@ -1,0 +1,113 @@
+# Runs on every push to `main`: calls the shared `ci.yml` quality gate,
+# then -- only if CI passed -- builds and pushes the Lambda container image
+# to ECR, then assumes the scoped apply role via OIDC and runs
+# `terraform apply` against `environments/prod` with that exact image tag.
+# `main` should only ever receive pushes through a merged, checks-green PR
+# once branch protection is enabled; this workflow does not itself enforce
+# that.
+#
+# Ordering decision (design.md "build-and-push before a single terraform
+# apply"): ECR lives in bootstrap/, applied once manually ahead of any CD
+# run, so the registry always exists before `image` pushes and `apply`
+# always has a real image to reference. One apply, one code path.
+#
+# `concurrency` below shares its group name with pr.yml's, on purpose: both
+# workflows take S3 native locks (use_lockfile) on the same state object
+# (environments/prod), and an apply and a plan racing for the same lock
+# fails loudly rather than queueing. A shared group serializes every
+# plan/apply across both workflows.
+name: cd
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.11.4"
+
+jobs:
+  ci:
+    name: ci
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    name: image
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (apply role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Mostly cache hits: ci.yml's own `image` job just built the same
+      # layers from the same commit's context on the same shared GHA cache.
+      # No `concurrency` group here -- this job touches no Terraform state,
+      # so a slow image push must not block an unrelated plan.
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: lambda/course-seat-watcher/Dockerfile
+          push: true
+          tags: ${{ vars.ECR_REPOSITORY_URL }}:sha-${{ github.sha }}
+          cache-from: type=gha
+
+  apply:
+    name: apply
+    needs: [ci, image]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: iac-terraform-state
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (apply role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      # Reuses scripts/tf-init.sh so the local, PR-plan, and apply init
+      # commands can never drift apart.
+      - name: terraform init (environments/prod)
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: ./scripts/tf-init.sh
+
+      - name: terraform apply (environments/prod)
+        working-directory: environments/prod
+        env:
+          TF_VAR_lambda_exec_boundary_arn: ${{ vars.LAMBDA_EXEC_BOUNDARY_ARN }}
+          TF_VAR_ecr_repository_url: ${{ vars.ECR_REPOSITORY_URL }}
+          TF_VAR_image_tag: "sha-${{ github.sha }}"
+          TF_VAR_ops_email: ${{ vars.OPS_EMAIL }}
+          TF_VAR_sender_email: ${{ vars.SENDER_EMAIL }}
+        run: terraform apply -auto-approve -no-color -input=false

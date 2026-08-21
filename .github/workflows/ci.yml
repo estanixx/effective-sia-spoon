@@ -1,0 +1,167 @@
+# Reusable quality-gate workflow. `workflow_call` ONLY -- never triggered
+# directly (no `push`/`pull_request` trigger). `pr.yml` and `cd.yml` both
+# `uses:` this workflow so the plan-time and apply-time gates can never
+# diverge (mirrors dcuero-iac's own ci.yml).
+#
+# Job ids below (fmt, validate, tflint, checkov, image) are deliberate:
+# when a caller workflow invokes this one from a job named `ci`, GitHub
+# renders each job's check name as "<caller job id> / <this job's name>" --
+# i.e. "ci / fmt", "ci / validate", "ci / tflint", "ci / checkov",
+# "ci / image". Branch protection's required checks depend on these exact
+# names.
+name: ci
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.11.4"
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive
+
+  validate-matrix:
+    name: validate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - bootstrap
+          - environments/prod
+          - modules/lambda-container-function
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      # -backend=false: none of these roots need real backend credentials to
+      # validate syntax/types. environments/prod has a real S3 backend, but
+      # it still validates fine without initializing it.
+      - name: terraform init -backend=false
+        working-directory: ${{ matrix.root }}
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: ${{ matrix.root }}
+        run: terraform validate
+
+  # Gate job: GitHub renders each matrix leg above as its own check
+  # ("ci / validate-matrix (bootstrap)", etc.), so branch protection cannot
+  # require a single "ci / validate" from the matrix job directly. This job
+  # depends on every leg and only succeeds if all of them did, giving
+  # branch protection's required-checks list one stable name.
+  validate:
+    name: validate
+    needs: validate-matrix
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check matrix result
+        run: |
+          if [ "${{ needs.validate-matrix.result }}" != "success" ]; then
+            echo "validate-matrix did not succeed: ${{ needs.validate-matrix.result }}"
+            exit 1
+          fi
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Init tflint plugins
+        run: tflint --init
+        env:
+          # Avoids GitHub API rate limiting when downloading the aws plugin.
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Recursive + default severity: any finding fails the step (blocking).
+      - name: tflint --recursive
+        run: tflint --recursive --format compact
+
+  checkov:
+    name: checkov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install checkov
+        run: pip install checkov
+
+      - name: Run checkov
+        run: checkov --directory . --framework terraform --config-file .checkov.yml --compact
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # push: false -- this workflow is also called from pr.yml, including
+      # for PRs whose plan/checkov/tflint jobs run without credentials;
+      # image scanning must never require or grant registry push access.
+      # Pushing to ECR only happens in cd.yml's own `image` job, on merge.
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: lambda/course-seat-watcher/Dockerfile
+          push: false
+          load: true
+          tags: sia-course-seat-watcher:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ignore-unfixed: true is load-bearing -- a Firefox-bearing image
+      # carries a long tail of OS CVEs with no available fix, and blocking
+      # on unfixable findings makes this gate un-actionable (design.md
+      # "Trivy threshold" decision). .trivyignore carries per-CVE
+      # justifications for anything accepted despite having a fix.
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: sia-course-seat-watcher:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: "1"

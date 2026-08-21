@@ -1,0 +1,18 @@
+# Per-CVE justified skips only -- never a blanket ignore. Add an entry here
+# ONLY after confirming (via `trivy image` locally, or a failing ci.yml
+# `image` job) that: (1) the CVE has no fix available yet (ci.yml's
+# `ignore-unfixed: true` already handles this class automatically -- an
+# entry here is for a CVE that DOES have a fix but is accepted anyway, e.g.
+# not reachable in this image's actual usage), and (2) the risk is
+# genuinely accepted, with a comment explaining why.
+#
+# As of the last local scan (Firefox ESR 140.14.0esr + geckodriver 0.37.1
+# on public.ecr.aws/lambda/python:3.12, Amazon Linux 2023), `trivy image
+# --severity HIGH,CRITICAL --vuln-type os,library` found ZERO findings
+# across OS packages, Python packages, and the bundled aws-lambda-rie
+# binary -- so this file starts empty. Firefox itself pulls a long tail of
+# OS-level CVEs over time (design.md's reason for `ignore-unfixed: true`
+# in the first place); expect entries to accumulate here as new CVEs are
+# published against packages this image can't yet upgrade past.
+#
+# Format: one CVE ID per line, `#` comment above explaining the decision.
