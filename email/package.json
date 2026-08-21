@@ -1,0 +1,14 @@
+{
+  "name": "course-seat-watcher-email",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Maizzle project for course-seat-watcher's seat-alert email. Built HTML is baked into the Lambda container image at Docker build time (see lambda/course-seat-watcher/Dockerfile) -- this project has no independent runtime.",
+  "scripts": {
+    "build": "maizzle build local",
+    "build:production": "maizzle build production"
+  },
+  "devDependencies": {
+    "@maizzle/framework": "^5.5.0",
+    "tailwindcss-preset-email": "^1.4.1"
+  }
+}
