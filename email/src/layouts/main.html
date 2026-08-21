@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:v="urn:schemas-microsoft-com:vml">
+<head>
+  <meta charset="utf-8">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no, url=no">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings xmlns:o="urn:schemas-microsoft-com:office:office">
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <style>
+    td,th,div,p,a,h1,h2,h3,h4,h5,h6 {font-family: "Segoe UI", sans-serif; mso-line-height-rule: exactly;}
+    .mso-break-all {word-break: break-all;}
+  </style>
+  <![endif]-->
+  <title>Cupos disponibles - SIA UNAL</title>
+  <style>
+    @tailwind components;
+    @tailwind utilities;
+
+    img {
+      @apply max-w-full align-middle;
+    }
+  </style>
+</head>
+<body class="m-0 p-0 w-full bg-canvas [word-break:break-word] [-webkit-font-smoothing:antialiased]">
+  <!--
+    Hidden preheader. The bracketed placeholder below is filled by
+    notifier.py's Jinja2 pass at send time (recipient-specific course
+    count), not by Maizzle at build time -- Maizzle owns the default
+    curly-brace syntax, so this custom-delimited placeholder passes
+    through this build untouched. The zero-width padding pushes any
+    trailing inbox-preview text past the real preheader.
+
+    NOTE: never write a bare/empty example of the literal bracket syntax
+    in a comment in this file -- Jinja2 parses comments too (it isn't
+    HTML-aware), and an empty pair fails to parse as a valid expression
+    and breaks the render.
+  -->
+  <div class="hidden">
+    [[ preheader ]]
+    <each loop="item in Array.from(Array(120))">&#8199;&#65279;&#847; </each>
+  </div>
+  <div role="article" aria-roledescription="email" aria-label="Cupos disponibles en el SIA" lang="es">
+    <yield />
+  </div>
+</body>
+</html>

@@ -17,3 +17,14 @@ override.tf.json
 
 # checkov --download-external-modules cache
 .external_modules/
+
+# Node / Maizzle (email/) -- build output is baked into the Lambda image at
+# Docker build time, not committed.
+node_modules/
+email/build_local/
+email/build_production/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

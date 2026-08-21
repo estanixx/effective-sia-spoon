@@ -15,6 +15,18 @@ module "watcher" {
 
   permissions_boundary_arn = var.lambda_exec_boundary_arn
 
+  # These three are deploy-time infrastructure values Terraform already
+  # knows exactly (a verified SES identity, a configuration-set name, a
+  # public asset URL) -- not operator-mutable business config, so they
+  # belong here rather than in the SSM parameter (design.md's SSM schema
+  # deliberately has no fields for them; SSM stays scoped to
+  # courses/filters/recipients, the values an operator edits post-deploy).
+  environment_variables = {
+    SENDER_EMAIL          = var.sender_email
+    SES_CONFIGURATION_SET = aws_sesv2_configuration_set.watcher.configuration_set_name
+    LOGO_URL              = "https://${aws_s3_bucket.email_assets.bucket}.s3.${var.region}.amazonaws.com/${aws_s3_object.logo.key}"
+  }
+
   policy_statements = [
     {
       sid       = "ReadWatcherConfig"

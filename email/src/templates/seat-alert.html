@@ -1,0 +1,70 @@
+<x-main>
+
+<!--
+  The bracketed placeholders below are Jinja2 (custom double-square-bracket
+  variable syntax and percent-bracket block syntax, deliberately NOT curly
+  braces), rendered by notifier.py at send time with autoescape=True
+  (course names/counts are scraped from an external, uncontrolled page).
+  Custom delimiters are required because Maizzle owns the default curly-
+  brace syntax at build time -- see main.html's header comment. Nothing in
+  this file is touched by Maizzle's own templating; it only compiles the
+  Tailwind classes and inlines the resulting CSS.
+
+  NOTE: never write an example of the literal bracket syntax in a comment
+  in this file -- Jinja2 parses comments too (it isn't HTML-aware), so a
+  bare example like the block-tag delimiter followed by a made-up word
+  fails to parse as a real Jinja2 statement and breaks the render.
+-->
+
+<div class="bg-canvas" style="font-family: Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" align="center" class="mx-auto max-w-[600px]">
+    <tr>
+      <td class="bg-brand py-8 text-center">
+        <img src="[[ logo_url ]]" width="120" height="120" alt="SIA UNAL" class="mx-auto block">
+        <div class="mx-auto mt-4 h-[2px] w-16 bg-accent"></div>
+      </td>
+    </tr>
+    <tr>
+      <td class="bg-canvas px-6 py-8">
+        <p class="m-0 mb-4 text-base text-ink">Hola,</p>
+        <p class="m-0 mb-6 text-base text-ink">
+          Se encontraron cupos disponibles en las siguientes asignaturas:
+        </p>
+
+        [% for course in courses %]
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="mb-4" style="border:1px solid #E5E1D8; border-radius:8px;">
+          <tr>
+            <td class="px-4 py-4">
+              <p class="m-0 mb-1 text-base font-bold text-ink">[[ course.name ]]</p>
+              <p class="m-0 mb-3 text-sm text-muted" style="font-family: 'Courier New', monospace;">[[ course.code ]]</p>
+              <span class="inline-block rounded bg-positive px-3 py-1 text-sm font-bold text-white">
+                [[ course.seats ]] cupo(s) disponible(s)
+              </span>
+            </td>
+          </tr>
+        </table>
+        [% endfor %]
+
+        <table role="presentation" cellpadding="0" cellspacing="0" class="mx-auto mt-6">
+          <tr>
+            <td class="rounded-md bg-cta text-center" bgcolor="#C24328">
+              <a href="[[ cta_url ]]" class="block rounded-md px-8 py-3 text-base font-bold text-white no-underline">
+                Ver en el SIA
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td class="bg-brand px-6 py-6 text-center">
+        <p class="m-0 mb-2 text-xs text-muted">Generado el [[ generated_at_bogota ]]</p>
+        <p class="m-0 text-xs text-muted">
+          Recibiste este correo porque [[ recipient_email ]] está suscrito a notificaciones de cupos del SIA.
+        </p>
+      </td>
+    </tr>
+  </table>
+</div>
+
+</x-main>

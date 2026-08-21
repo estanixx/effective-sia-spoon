@@ -1,0 +1,14 @@
+<!--
+  Minimal stand-in for the real Maizzle-built template (email/build_production/
+  seat-alert.html), used only by test_notifier.py so the test suite doesn't
+  depend on running the Node/Maizzle build first. Exercises the same custom
+  Jinja2 delimiters and variable names as the real template.
+-->
+<p>[[ preheader ]]</p>
+<p>Para: [[ recipient_email ]]</p>
+[% for course in courses %]
+<div>[[ course.name ]] ([[ course.code ]]): [[ course.seats ]]</div>
+[% endfor %]
+<a href="[[ cta_url ]]">Ver en el SIA</a>
+<img src="[[ logo_url ]]">
+<p>[[ generated_at_bogota ]]</p>
