@@ -1,0 +1,19 @@
+<!--
+  Synthetic, minimal reproduction of the SIA result page's availability
+  markup -- NOT a literal captured page (no live-browser access to
+  sia.unal.edu.co was available while writing this fixture). It exists
+  solely to lock the exact XPath contract scraper.py's _AVAILABILITY_XPATH
+  depends on: an element whose text contains "Cupos disponibles" followed
+  by a number. If the real site's markup ever changes shape, recapture
+  this fixture from a real page save and update it here.
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><title>SIA - Resultado</title></head>
+<body>
+  <div id="resultadoConsulta">
+    <h2>Introducción al Manejo de Datos Estadísticos (3006931)</h2>
+    <p class="info-cupos">Cupos disponibles: 3</p>
+  </div>
+</body>
+</html>

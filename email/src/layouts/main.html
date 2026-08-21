@@ -32,11 +32,17 @@
 </head>
 <body class="m-0 p-0 w-full bg-canvas [word-break:break-word] [-webkit-font-smoothing:antialiased]">
   <!--
-    Hidden preheader. [[ preheader ]] is filled by notifier.py's Jinja2
-    pass at send time (recipient-specific course count), not by Maizzle at
-    build time -- Maizzle owns {{ }}/{{{ }}}, so the [[ ]] placeholder
-    passes through this build untouched. The zero-width padding pushes any
+    Hidden preheader. The bracketed placeholder below is filled by
+    notifier.py's Jinja2 pass at send time (recipient-specific course
+    count), not by Maizzle at build time -- Maizzle owns the default
+    curly-brace syntax, so this custom-delimited placeholder passes
+    through this build untouched. The zero-width padding pushes any
     trailing inbox-preview text past the real preheader.
+
+    NOTE: never write a bare/empty example of the literal bracket syntax
+    in a comment in this file -- Jinja2 parses comments too (it isn't
+    HTML-aware), and an empty pair fails to parse as a valid expression
+    and breaks the render.
   -->
   <div class="hidden">
     [[ preheader ]]

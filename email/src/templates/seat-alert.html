@@ -1,13 +1,19 @@
 <x-main>
 
 <!--
-  All [[ var ]] / [% tag %] placeholders below are Jinja2, rendered by
-  notifier.py at send time with autoescape=True (course names/counts are
-  scraped from an external, uncontrolled page). Custom delimiters are
-  required because Maizzle owns the default {{ }}/{{{ }}} syntax at build
-  time -- see main.html's header comment. Nothing in this file is touched
-  by Maizzle's own templating; it only compiles the Tailwind classes and
-  inlines the resulting CSS.
+  The bracketed placeholders below are Jinja2 (custom double-square-bracket
+  variable syntax and percent-bracket block syntax, deliberately NOT curly
+  braces), rendered by notifier.py at send time with autoescape=True
+  (course names/counts are scraped from an external, uncontrolled page).
+  Custom delimiters are required because Maizzle owns the default curly-
+  brace syntax at build time -- see main.html's header comment. Nothing in
+  this file is touched by Maizzle's own templating; it only compiles the
+  Tailwind classes and inlines the resulting CSS.
+
+  NOTE: never write an example of the literal bracket syntax in a comment
+  in this file -- Jinja2 parses comments too (it isn't HTML-aware), so a
+  bare example like the block-tag delimiter followed by a made-up word
+  fails to parse as a real Jinja2 statement and breaks the render.
 -->
 
 <div class="bg-canvas" style="font-family: Arial, Helvetica, sans-serif;">
