@@ -15,6 +15,7 @@ prototype, refactored for Lambda (design.md 'Changes from search.py'):
   button existing/working, and is no more expensive than the click-then-
   wait-for-repaint it replaces.
 """
+import os
 import re
 
 from selenium import webdriver
@@ -46,7 +47,14 @@ def parse_seats(availability_text: str) -> int:
 def build_driver() -> webdriver.Firefox:
     """The container filesystem is read-only outside /tmp, so the Firefox
     profile is pinned there explicitly (Dockerfile also sets HOME/TMPDIR to
-    /tmp for the same reason)."""
+    /tmp for the same reason). The directory must be created here, not in
+    the Dockerfile: Lambda provisions /tmp fresh per execution environment
+    -- it is ephemeral storage, not part of the image -- so anything
+    created there at build time never reaches the real runtime. Confirmed
+    via a local Docker build: geckodriver fails with "Failed to set
+    preferences: unknown error" if the -profile directory doesn't already
+    exist when it launches Firefox."""
+    os.makedirs(PROFILE_PATH, exist_ok=True)
     service = Service(GECKODRIVER_PATH)
     options = Options()
     options.binary_location = FIREFOX_BINARY_PATH
