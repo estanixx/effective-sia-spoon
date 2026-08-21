@@ -15,7 +15,7 @@ data "aws_iam_policy_document" "plan_trust" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
     }
 
     condition {
@@ -158,7 +158,7 @@ data "aws_iam_policy_document" "apply_trust" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
     }
 
     condition {
@@ -495,7 +495,7 @@ data "aws_iam_policy_document" "apply_boundary" {
     resources = [
       local.plan_role_arn,
       local.apply_role_arn,
-      aws_iam_openid_connect_provider.github.arn,
+      data.aws_iam_openid_connect_provider.github.arn,
     ]
   }
 
