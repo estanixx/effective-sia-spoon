@@ -61,7 +61,7 @@ jobs:
       # No `concurrency` group here -- this job touches no Terraform state,
       # so a slow image push must not block an unrelated plan.
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: lambda/course-seat-watcher/Dockerfile

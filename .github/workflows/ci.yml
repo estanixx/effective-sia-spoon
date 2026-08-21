@@ -141,7 +141,7 @@ jobs:
       # image scanning must never require or grant registry push access.
       # Pushing to ECR only happens in cd.yml's own `image` job, on merge.
       - name: Build image (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: lambda/course-seat-watcher/Dockerfile
@@ -157,7 +157,7 @@ jobs:
       # "Trivy threshold" decision). .trivyignore carries per-CVE
       # justifications for anything accepted despite having a fix.
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: sia-course-seat-watcher:ci
           format: table
