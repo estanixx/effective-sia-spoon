@@ -53,13 +53,20 @@ resource "aws_s3_bucket_public_access_block" "state" {
 }
 
 # --- GitHub OIDC provider ----------------------------------------------------
+#
+# IAM OIDC providers are keyed by URL and scoped to the whole AWS account,
+# not to a project or repo -- this account (871696174477) already has one
+# for token.actions.githubusercontent.com (CreateDate 2026-05-17, three
+# months before this project existed -- confirmed via `aws iam
+# get-open-id-connect-provider`, and confirmed NOT dcuero-iac's, whose own
+# OIDC provider lives in a different account, 930628638746, per its own
+# terraform.tfstate; origin unknown, some other pre-existing setup in this
+# account). A `resource` here fails with "EntityAlreadyExists" (confirmed
+# by hitting exactly that error on first apply) -- and even `terraform
+# import`ing it would risk a second Terraform root fighting for ownership
+# of the same physical object. Referenced via `data`, read-only, never
+# created or destroyed by this root.
 
-data "tls_certificate" "github" {
-  url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
-}
-
-resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.github.certificates[0].sha1_fingerprint]
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
 }
