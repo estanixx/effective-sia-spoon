@@ -153,12 +153,13 @@ docker build -f lambda/course-seat-watcher/Dockerfile -t sia-course-seat-watcher
 - **Firefox logs a sandbox warning on every launch**
   (`CanCreateUserNamespace() clone() failure: EPERM`) — confirmed
   non-fatal locally (Firefox falls back and both a headless screenshot and
-  a full Selenium session succeed regardless). **Not yet confirmed in real
-  AWS Lambda** — Lambda's gVisor sandbox is stricter than a default local
-  Docker container, and there are public reports of this exact
-  incompatibility being worse there. This is the single biggest unverified
-  risk in the whole design until an actual Lambda invocation is observed
-  post-deploy.
+  a full Selenium session succeed regardless). **Confirmed non-fatal in
+  real AWS Lambda too**, resolving what was the single biggest unverified
+  risk in the whole design: a real manual `aws lambda invoke` against the
+  deployed function completed a full scrape + SES send successfully
+  (`coursesScraped: 1, emailsSent: 1`, cold-start `Init Duration`
+  1.73s) — Lambda's stricter gVisor sandbox does not break this the way
+  some public reports of the same warning elsewhere suggested it might.
 
 ## Manual, one-time operational steps
 
