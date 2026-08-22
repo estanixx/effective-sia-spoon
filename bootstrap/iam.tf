@@ -428,12 +428,21 @@ data "aws_iam_policy_document" "apply_permissions" {
     # Object CRUD for the email-assets bucket only (design.md §1,
     # "email_assets.tf") -- the logo PNG object. No other bucket needs
     # object-level access from Terraform.
+    #
+    # *ObjectTagging is required alongside Put/Get/DeleteObject because the
+    # provider's default_tags apply to aws_s3_object too -- confirmed live:
+    # PutObjectTagging was denied on the object's first real create, same
+    # "CRUD looked complete but wasn't" shape as the bucket-level gaps
+    # above. GetObjectTagging is included pre-emptively for the same
+    # refresh-needs-more-than-create reason those gaps taught.
     sid    = "EmailAssetsObjectCrud"
     effect = "Allow"
     actions = [
       "s3:PutObject",
       "s3:GetObject",
       "s3:DeleteObject",
+      "s3:PutObjectTagging",
+      "s3:GetObjectTagging",
     ]
     resources = ["arn:aws:s3:::${var.name_prefix}-email-assets-${data.aws_caller_identity.current.account_id}/*"]
   }
