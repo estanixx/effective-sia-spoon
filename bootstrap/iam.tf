@@ -117,6 +117,16 @@ data "aws_iam_policy_document" "plan_permissions" {
     # s3:ListBucket must stay unconditional here too -- see the
     # S3BucketManagement comment below for why (HeadBucket carries no
     # s3:prefix, so a ListStateBucket-style condition never matches).
+    #
+    # The last six actions below (GetBucketWebsite through
+    # GetBucketNotification) exist because aws_s3_bucket's refresh reads
+    # more sub-resources than create/import does -- confirmed live: a real
+    # `terraform plan` failed with AccessDenied on s3:GetBucketWebsite
+    # alone, on a bucket that had *just* imported cleanly, because import
+    # only wrote the initial state and the very next refresh already
+    # needed a permission nothing above granted. Same failure-shape as the
+    # s3:ListBucket gap: silently narrower actual requirements than what
+    # "the bucket CRUD actions" looks like it should cover.
     sid    = "ReadS3BucketConfig"
     effect = "Allow"
     actions = [
@@ -131,6 +141,12 @@ data "aws_iam_policy_document" "plan_permissions" {
       "s3:GetBucketAcl",
       "s3:GetBucketLogging",
       "s3:GetBucketCORS",
+      "s3:GetBucketWebsite",
+      "s3:GetAccelerateConfiguration",
+      "s3:GetBucketRequestPayment",
+      "s3:GetBucketObjectLockConfiguration",
+      "s3:GetReplicationConfiguration",
+      "s3:GetBucketNotification",
     ]
     resources = ["arn:aws:s3:::sia-*"]
   }
@@ -361,6 +377,16 @@ data "aws_iam_policy_document" "apply_permissions" {
     # conditioned copy looks complete but silently never matches. If you
     # add the next S3 bucket resource in this repo, this statement's
     # sia-* scope already covers it; keep s3:ListBucket unconditional.
+    #
+    # Second incident, same shape: fixing the ListBucket gap above got the
+    # bucket successfully imported, and the very next `terraform plan`
+    # failed with AccessDenied on s3:GetBucketWebsite -- aws_s3_bucket's
+    # refresh reads several more sub-resources than create/import touches
+    # (website, transfer-acceleration, request-payment, object-lock,
+    # replication, notification config), none of which "the bucket CRUD
+    # actions" obviously implies. All six read actions are granted below
+    # even though this bucket doesn't use most of them, specifically so
+    # refresh doesn't fail piecemeal on whichever one gets hit first.
     sid    = "S3BucketManagement"
     effect = "Allow"
     actions = [
@@ -388,6 +414,12 @@ data "aws_iam_policy_document" "apply_permissions" {
       "s3:PutBucketLogging",
       "s3:GetBucketCORS",
       "s3:PutBucketCORS",
+      "s3:GetBucketWebsite",
+      "s3:GetAccelerateConfiguration",
+      "s3:GetBucketRequestPayment",
+      "s3:GetBucketObjectLockConfiguration",
+      "s3:GetReplicationConfiguration",
+      "s3:GetBucketNotification",
     ]
     resources = ["arn:aws:s3:::sia-*"]
   }
