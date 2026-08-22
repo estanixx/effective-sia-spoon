@@ -151,6 +151,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # No inline size gate here on purpose (the design's floor is "well
+      # under the 10GB Lambda image limit", not a specific target) -- this
+      # is visibility, so a regression is noticeable in every run's log
+      # instead of only when someone remembers to check manually.
+      - name: Report image size
+        run: docker image inspect sia-course-seat-watcher:ci --format '{{.Size}}' | numfmt --to=iec-i --suffix=B
+
       # ignore-unfixed: true is load-bearing -- a Firefox-bearing image
       # carries a long tail of OS CVEs with no available fix, and blocking
       # on unfixable findings makes this gate un-actionable (design.md

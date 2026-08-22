@@ -103,7 +103,26 @@ docker build -f lambda/course-seat-watcher/Dockerfile -t sia-course-seat-watcher
   ship. Still comfortably under the 10GB image limit. Install these with
   `--setopt=install_weak_deps=0` — plain `dnf install gtk3` pulls in
   ~150MB of unrelated pipewire/xdg-desktop-portal/systemd-user packages
-  this image has no use for.
+  this image has no use for. `ci.yml`'s `image` job now prints the real
+  built size (`docker image inspect ... .Size`) on every run instead of
+  this being a guess.
+- **Dead-weight trims applied, fused into the same `RUN` layer that
+  creates the bytes** (a `rm` in a *later* layer doesn't shrink the
+  image — layers are additive): dropped `boto3` from
+  `requirements.txt` (the Lambda Python base image already ships
+  boto3/botocore; pinning it forced a redundant install of botocore's
+  full AWS service-model set, the single heaviest thing in most boto
+  projects); stripped Firefox's crashreporter/pingsender/updater/
+  spellcheck-dictionary files (update-channel and spellcheck machinery,
+  unused by a headless single-invocation scraper); stripped non-en/es
+  `/usr/share/locale` trees from the dnf-installed GTK3/mesa stack.
+  **Not yet touched, deliberately**: whether `mesa-libgbm` pulled in
+  `mesa-dri-drivers` (real GPU software-rendering drivers, potentially
+  the single largest avoidable chunk — headless Firefox scraping
+  doesn't need GPU-accelerated rendering) is unverified — removing it
+  without a real build+launch test risks breaking Firefox startup. Test
+  with the Firefox smoke test command above before removing anything
+  from that package.
 - **`scraper.py`'s Firefox profile directory is created at runtime, not
   build time.** Lambda provisions `/tmp` fresh per execution environment —
   it's ephemeral storage, not part of the image — so `RUN mkdir` in the
