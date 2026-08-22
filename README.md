@@ -2,7 +2,7 @@
   <img src="email/assets/logo.png" width="96" height="96" alt="SIA Seat Watcher logo">
 </p>
 
-<h1 align="center">course-seat-watcher</h1>
+<h1 align="center">effective-sia-spoon</h1>
 
 <p align="center">
   A serverless watcher that polls UNAL's SIA course catalog for open seats<br>
@@ -21,7 +21,7 @@
 ## What it does
 
 Registering for a full course at UNAL means refreshing the SIA catalog by
-hand, hoping to catch a seat the instant someone drops. `course-seat-watcher`
+hand, hoping to catch a seat the instant someone drops. `effective-sia-spoon`
 does that watching for you: every 10 minutes between 06:00 and 13:00
 (America/Bogotá), it heads to the catalog, checks the courses you care about,
 and — the moment one has an open seat — sends you an email with the details
