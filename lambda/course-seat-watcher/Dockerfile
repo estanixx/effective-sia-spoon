@@ -37,12 +37,25 @@ ARG GECKODRIVER_SHA256=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde2
 # the image (each layer is additive). Non-en locale trees are dead weight:
 # this project only ever renders/logs in en/es and dnf's own translations
 # aren't read at runtime.
+# mesa-libgbm hard-Requires mesa-dri-drivers (~134MB, confirmed via
+# `rpm -q --qf '%{SIZE}'` -- not a weak dep, install_weak_deps=0 above
+# doesn't stop it). It ships one DRI/gallium driver .so per real GPU vendor
+# (radeonsi, nouveau, i915, iris, panfrost, ...) headless Lambda never has
+# hardware for. Kept: swrast_dri.so + kms_swrast_dri.so (the software-
+# rasterizer symlinks GBM/EGL actually load when there's no GPU) and their
+# real targets -- libdril_dri.so, pipe_swrast.so, libgallium-*.so
+# (confirmed via `rpm -qf` all three belong to mesa-dri-drivers itself).
+# Verified after trimming: Firefox still launches and completes a full
+# Selenium session in this image (build_driver() smoke test).
 RUN dnf install -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
-      tar xz gzip gtk3 libXt dbus-glib mesa-libgbm alsa-lib \
+      tar xz gzip findutils gtk3 libXt dbus-glib mesa-libgbm alsa-lib \
     && dnf clean all \
     && rm -rf /var/cache/dnf \
     && find /usr/share/locale -mindepth 1 -maxdepth 1 -type d \
-         ! -name 'en*' ! -name 'es*' -exec rm -rf {} +
+         ! -name 'en*' ! -name 'es*' -exec rm -rf {} + \
+    && find /usr/lib64/dri -mindepth 1 \
+         ! -name 'swrast_dri.so' ! -name 'kms_swrast_dri.so' ! -name 'libdril_dri.so' -delete \
+    && find /usr/lib64/gallium-pipe -mindepth 1 ! -name 'pipe_swrast.so' -delete
 
 # Cleanup below is fused into the same RUN as the extraction (same reason as
 # above). Everything removed is dead weight for a headless, single-purpose

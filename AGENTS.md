@@ -97,15 +97,22 @@ docker build -f lambda/course-seat-watcher/Dockerfile -t sia-course-seat-watcher
   the `default` group) — the group name has to start with `sia-` for
   bootstrap's IAM wildcard (`schedule/sia-*`) to match, since a Scheduler
   ARN is `schedule/<group>/<name>`.
-- **The container image is bigger than originally estimated (~1.8GB, not
-  ~1.2–1.5GB)** — headless Firefox needs a real GTK3/X11/cairo/pango/mesa/
+- **The container image measures 1.61GB** (`docker images --format
+  '{{.Size}}'`, verified locally after every trim below, real build not
+  an estimate) — headless Firefox needs a real GTK3/X11/cairo/pango/mesa/
   dbus shared-library stack that the minimal Lambda base image doesn't
   ship. Still comfortably under the 10GB image limit. Install these with
   `--setopt=install_weak_deps=0` — plain `dnf install gtk3` pulls in
   ~150MB of unrelated pipewire/xdg-desktop-portal/systemd-user packages
-  this image has no use for. `ci.yml`'s `image` job now prints the real
-  built size (`docker image inspect ... .Size`) on every run instead of
-  this being a guess.
+  this image has no use for. `ci.yml`'s `image` job prints this same
+  number on every run.
+  - **`docker inspect --format '{{.Size}}'` lies on this image** —
+    verified it reports 416MiB against a real 1.72GB on-disk size
+    (confirmed independently via `docker save | wc -c`), because buildx
+    exports an attestation manifest list here and `docker inspect`
+    reads the wrong field off it. `docker images`'s `Size` column is the
+    one that matched reality. Don't reach for `docker inspect` on this
+    image's size again without re-checking that.
 - **Dead-weight trims applied, fused into the same `RUN` layer that
   creates the bytes** (a `rm` in a *later* layer doesn't shrink the
   image — layers are additive): dropped `boto3` from
@@ -115,14 +122,18 @@ docker build -f lambda/course-seat-watcher/Dockerfile -t sia-course-seat-watcher
   projects); stripped Firefox's crashreporter/pingsender/updater/
   spellcheck-dictionary files (update-channel and spellcheck machinery,
   unused by a headless single-invocation scraper); stripped non-en/es
-  `/usr/share/locale` trees from the dnf-installed GTK3/mesa stack.
-  **Not yet touched, deliberately**: whether `mesa-libgbm` pulled in
-  `mesa-dri-drivers` (real GPU software-rendering drivers, potentially
-  the single largest avoidable chunk — headless Firefox scraping
-  doesn't need GPU-accelerated rendering) is unverified — removing it
-  without a real build+launch test risks breaking Firefox startup. Test
-  with the Firefox smoke test command above before removing anything
-  from that package.
+  `/usr/share/locale` trees from the dnf-installed GTK3/mesa stack;
+  stripped `mesa-dri-drivers` down to just the software-rasterizer path
+  (`swrast_dri.so`/`kms_swrast_dri.so` symlinks, their real target
+  `libdril_dri.so`, `pipe_swrast.so`, `libgallium-*.so` — confirmed via
+  `rpm -qf` all four belong to `mesa-dri-drivers` itself), deleting
+  ~84MB of vendor GPU drivers (radeonsi/nouveau/i915/iris/panfrost/...)
+  a headless Lambda never has hardware for — `mesa-libgbm` hard-`Requires`
+  the whole package (`install_weak_deps=0` doesn't stop it; confirmed via
+  `rpm -q --qf '%{SIZE}'`, 134MB installed). **Verified after every trim
+  above**: `build_driver()` still launches Firefox and completes a real
+  `.get()` navigation in the built image (not just "the build
+  succeeded").
 - **`scraper.py`'s Firefox profile directory is created at runtime, not
   build time.** Lambda provisions `/tmp` fresh per execution environment —
   it's ephemeral storage, not part of the image — so `RUN mkdir` in the
