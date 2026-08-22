@@ -150,6 +150,26 @@ data "aws_iam_policy_document" "plan_permissions" {
     ]
     resources = ["arn:aws:s3:::sia-*"]
   }
+
+  statement {
+    # Read-only mirror of the apply role's EmailAssetsObjectCrud statement
+    # below -- missed when that statement was first added (PR12) because
+    # nothing at the time confirmed the plan role also refreshes
+    # aws_s3_object.logo. Confirmed live: a real `terraform plan` failed
+    # with AccessDenied on s3:GetObjectTagging for this exact object,
+    # since object-level access was never granted to sia-plan at all (only
+    # bucket-level config, via ReadS3BucketConfig above). GetObject is
+    # included alongside GetObjectTagging since the object's own
+    # refresh/diff needs both, not just the tagging call that happened to
+    # surface first.
+    sid    = "ReadEmailAssetsObject"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectTagging",
+    ]
+    resources = ["arn:aws:s3:::${var.name_prefix}-email-assets-${data.aws_caller_identity.current.account_id}/*"]
+  }
 }
 
 resource "aws_iam_policy" "plan_permissions" {
