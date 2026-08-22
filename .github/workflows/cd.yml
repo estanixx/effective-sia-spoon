@@ -73,6 +73,7 @@ jobs:
     name: apply
     needs: [ci, image]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     concurrency:
       group: iac-terraform-state
       cancel-in-progress: false

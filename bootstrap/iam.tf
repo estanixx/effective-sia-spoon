@@ -113,9 +113,14 @@ data "aws_iam_policy_document" "plan_permissions" {
     # below, scoped to the same sia-* bucket-naming convention, so
     # `terraform plan` can diff the email-assets bucket without needing
     # write access.
+    #
+    # s3:ListBucket must stay unconditional here too -- see the
+    # S3BucketManagement comment below for why (HeadBucket carries no
+    # s3:prefix, so a ListStateBucket-style condition never matches).
     sid    = "ReadS3BucketConfig"
     effect = "Allow"
     actions = [
+      "s3:ListBucket",
       "s3:GetBucketTagging",
       "s3:GetBucketVersioning",
       "s3:GetBucketPublicAccessBlock",
@@ -340,9 +345,26 @@ data "aws_iam_policy_document" "apply_permissions" {
     # the state bucket's mutating config calls are also explicitly denied
     # by DenyStateBucketConfigMutation in the apply boundary below
     # regardless.
+    #
+    # s3:ListBucket must be granted here unconditionally for any S3 bucket
+    # resource in this account. terraform-provider-aws's aws_s3_bucket
+    # create/import path polls HeadBucket to confirm the bucket is ready;
+    # HeadBucket is authorized as s3:ListBucket, and it carries no
+    # s3:prefix in its request context. Without this grant, AWS returns a
+    # bodyless 403 that the provider's waiter cannot tell apart from "not
+    # ready yet," so it retries silently until its own internal timeout
+    # (~10-20 min) instead of failing fast with a visible AccessDenied.
+    # This was the root cause of three real hung `terraform apply` runs
+    # against environments/prod's aws_s3_bucket.email_assets this project.
+    # Do NOT copy the ListStateBucket pattern above (s3:prefix StringLike
+    # condition) onto this grant -- HeadBucket sends no prefix, so a
+    # conditioned copy looks complete but silently never matches. If you
+    # add the next S3 bucket resource in this repo, this statement's
+    # sia-* scope already covers it; keep s3:ListBucket unconditional.
     sid    = "S3BucketManagement"
     effect = "Allow"
     actions = [
+      "s3:ListBucket",
       "s3:CreateBucket",
       "s3:DeleteBucket",
       "s3:GetBucketTagging",
