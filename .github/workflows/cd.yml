@@ -60,12 +60,22 @@ jobs:
       # layers from the same commit's context on the same shared GHA cache.
       # No `concurrency` group here -- this job touches no Terraform state,
       # so a slow image push must not block an unrelated plan.
+      # provenance/sbom: false -- buildx defaults to attaching a build
+      # provenance attestation, which turns the pushed image into an OCI
+      # manifest *list* (the real single-platform image plus an attestation
+      # sub-manifest). Confirmed live: Lambda's CreateFunction rejects that
+      # shape outright ("image manifest, config or layer media type ... is
+      # not supported") -- it only accepts a single-platform Docker v2
+      # Schema 2 / plain OCI manifest, never a manifest list, attestations
+      # or not.
       - name: Build and push image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: lambda/course-seat-watcher/Dockerfile
           push: true
+          provenance: false
+          sbom: false
           tags: ${{ vars.ECR_REPOSITORY_URL }}:sha-${{ github.sha }}
           cache-from: type=gha
 
