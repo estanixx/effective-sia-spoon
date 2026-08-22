@@ -97,6 +97,16 @@ docker build -f lambda/course-seat-watcher/Dockerfile -t sia-course-seat-watcher
   the `default` group) — the group name has to start with `sia-` for
   bootstrap's IAM wildcard (`schedule/sia-*`) to match, since a Scheduler
   ARN is `schedule/<group>/<name>`.
+- **`reserved_concurrent_executions` currently defaults to `-1`
+  (unreserved), not `1`.** The design intent is `1` — a hard guarantee
+  against a second invocation overlapping the first and double-sending a
+  notification email. Confirmed live this account's real Lambda
+  concurrency limit is only 10 (`aws lambda get-account-settings`), and
+  AWS enforces a floor of 10 unreserved executions account-wide, making
+  *any* positive reservation mathematically impossible right now.
+  Revert to `1` in `modules/lambda-container-function/variables.tf` once
+  a Service Quotas request raises the account's limit — tracked as a
+  known gap, not a permanent decision.
 - **The container image measures 1.61GB** (`docker images --format
   '{{.Size}}'`, verified locally after every trim below, real build not
   an estimate) — headless Firefox needs a real GTK3/X11/cairo/pango/mesa/

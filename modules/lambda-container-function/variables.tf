@@ -44,9 +44,21 @@ variable "architecture" {
 }
 
 variable "reserved_concurrent_executions" {
-  description = "Reserved concurrency ceiling. Default 1 is a hard guarantee against a second invocation overlapping the first and double-sending a notification email (design.md 'Sizing')."
+  description = <<-EOT
+    Reserved concurrency ceiling. -1 (the AWS provider's own convention for
+    "no reservation") is the current default -- a positive reservation is
+    the real design intent (a hard guarantee against a second invocation
+    overlapping the first and double-sending a notification email,
+    design.md "Sizing"), but this account's real Lambda concurrency limit
+    is only 10 (confirmed live via `aws lambda get-account-settings`, not
+    AWS's usual 1000 default), and AWS enforces a floor of 10 unreserved
+    executions account-wide -- so any positive reservation here is
+    mathematically impossible until the account's quota is raised via a
+    Service Quotas request. Revert to 1 once that quota increase lands;
+    tracked as a known gap, not a permanent decision.
+  EOT
   type        = number
-  default     = 1
+  default     = -1
 }
 
 variable "environment_variables" {
