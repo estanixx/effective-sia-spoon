@@ -32,10 +32,36 @@ ARG GECKODRIVER_SHA256=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde2
 # pulling in gtk3's optional weak deps (pipewire, xdg-desktop-portal,
 # systemd user services) which add ~150MB and multiple running-service
 # packages for no reason in a headless, single-invocation Lambda image.
+# Locale stripping happens in this SAME RUN, not a later one -- a `rm` in a
+# later layer only hides the bytes from the merged view, it doesn't shrink
+# the image (each layer is additive). Non-en locale trees are dead weight:
+# this project only ever renders/logs in en/es and dnf's own translations
+# aren't read at runtime.
+# mesa-libgbm hard-Requires mesa-dri-drivers (~134MB, confirmed via
+# `rpm -q --qf '%{SIZE}'` -- not a weak dep, install_weak_deps=0 above
+# doesn't stop it). It ships one DRI/gallium driver .so per real GPU vendor
+# (radeonsi, nouveau, i915, iris, panfrost, ...) headless Lambda never has
+# hardware for. Kept: swrast_dri.so + kms_swrast_dri.so (the software-
+# rasterizer symlinks GBM/EGL actually load when there's no GPU) and their
+# real targets -- libdril_dri.so, pipe_swrast.so, libgallium-*.so
+# (confirmed via `rpm -qf` all three belong to mesa-dri-drivers itself).
+# Verified after trimming: Firefox still launches and completes a full
+# Selenium session in this image (build_driver() smoke test).
 RUN dnf install -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
-      tar xz gzip gtk3 libXt dbus-glib mesa-libgbm alsa-lib \
-    && dnf clean all
+      tar xz gzip findutils gtk3 libXt dbus-glib mesa-libgbm alsa-lib \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf \
+    && find /usr/share/locale -mindepth 1 -maxdepth 1 -type d \
+         ! -name 'en*' ! -name 'es*' -exec rm -rf {} + \
+    && find /usr/lib64/dri -mindepth 1 \
+         ! -name 'swrast_dri.so' ! -name 'kms_swrast_dri.so' ! -name 'libdril_dri.so' -delete \
+    && find /usr/lib64/gallium-pipe -mindepth 1 ! -name 'pipe_swrast.so' -delete
 
+# Cleanup below is fused into the same RUN as the extraction (same reason as
+# above). Everything removed is dead weight for a headless, single-purpose
+# scraper: crashreporter/pingsender/updater are update-channel machinery
+# this Lambda never uses (the image itself is the update mechanism), and
+# spellcheck dictionaries are never exercised by Selenium automation.
 RUN curl -fsSL -o /tmp/firefox.tar.xz \
       "https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" \
     && echo "${FIREFOX_SHA256}  /tmp/firefox.tar.xz" | sha256sum -c - \
@@ -46,7 +72,12 @@ RUN curl -fsSL -o /tmp/firefox.tar.xz \
     && echo "${GECKODRIVER_SHA256}  /tmp/geckodriver.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/geckodriver.tar.gz -C /opt \
     && rm /tmp/geckodriver.tar.gz \
-    && chmod +x /opt/geckodriver /opt/firefox/firefox
+    && chmod +x /opt/geckodriver /opt/firefox/firefox \
+    && rm -rf /opt/firefox/crashreporter /opt/firefox/crashreporter.ini \
+              /opt/firefox/crashreporter-override.ini /opt/firefox/pingsender \
+              /opt/firefox/updater /opt/firefox/update-settings.ini \
+              /opt/firefox/precomplete /opt/firefox/removed-files \
+              /opt/firefox/dictionaries
 
 # Firefox's content-process sandbox tries to create an unprivileged user
 # namespace and fails under both a default `docker run` and (per public
