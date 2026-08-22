@@ -385,10 +385,18 @@ data "aws_iam_policy_document" "apply_permissions" {
   }
 
   statement {
-    sid       = "SchedulerManagement"
-    effect    = "Allow"
-    actions   = ["scheduler:*"]
-    resources = ["arn:aws:scheduler:${var.region}:${data.aws_caller_identity.current.account_id}:schedule/sia-*"]
+    # Both resource types are needed: schedule-group/sia-* for
+    # aws_scheduler_schedule_group (CreateScheduleGroup etc. -- a distinct
+    # resource type from a schedule itself, confirmed missing here by a
+    # live AccessDeniedException on first real apply) and schedule/sia-*
+    # for the two aws_scheduler_schedule instances inside that group.
+    sid     = "SchedulerManagement"
+    effect  = "Allow"
+    actions = ["scheduler:*"]
+    resources = [
+      "arn:aws:scheduler:${var.region}:${data.aws_caller_identity.current.account_id}:schedule-group/sia-*",
+      "arn:aws:scheduler:${var.region}:${data.aws_caller_identity.current.account_id}:schedule/sia-*",
+    ]
   }
 
   statement {
@@ -418,12 +426,20 @@ data "aws_iam_policy_document" "apply_permissions" {
   }
 
   statement {
+    # ListTagsForResource/TagResource/UntagResource are required alongside
+    # the alarm-management actions themselves: providers.tf's default_tags
+    # block means Terraform reads back and reconciles tags on every
+    # resource, including alarms -- confirmed missing here by a live
+    # AccessDenied on ListTagsForResource on first real apply.
     sid    = "CloudwatchAlarmManagement"
     effect = "Allow"
     actions = [
       "cloudwatch:PutMetricAlarm",
       "cloudwatch:DeleteAlarms",
       "cloudwatch:DescribeAlarms",
+      "cloudwatch:ListTagsForResource",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
     ]
     resources = ["arn:aws:cloudwatch:${var.region}:${data.aws_caller_identity.current.account_id}:alarm:sia-*"]
   }
