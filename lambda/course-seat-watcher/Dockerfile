@@ -47,7 +47,32 @@ ARG GECKODRIVER_SHA256=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde2
 # (confirmed via `rpm -qf` all three belong to mesa-dri-drivers itself).
 # Verified after trimming: Firefox still launches and completes a full
 # Selenium session in this image (build_driver() smoke test).
-RUN dnf install -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
+# dnf upgrade -y fused into this same RUN, before install: the base image
+# (public.ecr.aws/lambda/python:3.12) ships whatever Amazon Linux 2023
+# packages were current at its own build time, which lag behind AL2023's
+# rolling security updates. Real, live finding via the Trivy PR gate: 3
+# HIGH CVEs (libsoup3 CVE-2026-15711, openssl-fips-provider-latest and
+# openssl-snapsafe-libs both CVE-2026-14456), all already "fixed" upstream
+# -- a plain upgrade, not a workaround.
+#
+# A bare `dnf upgrade -y` here was NOT enough (verified live: this PR's own
+# first CI run logged "Nothing to do." and still installed libsoup3 at the
+# old 3.6.6-58 version) -- AL2023's Lambda base images pin
+# /etc/dnf/vars/releasever to the exact dated snapshot ("2023.12.20260803")
+# baked in at the base image's own build time, so its repo mirror is frozen
+# at that snapshot's baseline; the CVE fixes ship in a *later* snapshot the
+# pinned mirror never sees (known upstream:
+# https://github.com/aws/aws-lambda-base-images/issues/224). The commonly
+# documented fix -- `rm /etc/dnf/vars/releasever` -- goes further than
+# needed and breaks every dnf call after it: with releasever permanently
+# unpinned, the very next `dnf install` in this same RUN 403s on the
+# mirror.list (https://github.com/aws/aws-lambda-base-images/issues/163).
+# Passing `--releasever=latest` as a one-off CLI flag instead of removing
+# the vars file keeps that override scoped to this single dnf invocation --
+# the install right after falls back to the still-intact pinned
+# /etc/dnf/vars/releasever and should not hit that 403.
+RUN dnf upgrade -y --releasever=latest --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
+    && dnf install -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
       tar xz gzip findutils gtk3 libXt dbus-glib mesa-libgbm alsa-lib \
     && dnf clean all \
     && rm -rf /var/cache/dnf \
