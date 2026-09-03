@@ -208,10 +208,25 @@ data "aws_iam_policy_document" "apply_trust" {
       values   = ["sts.amazonaws.com"]
     }
 
+    # Two sub shapes, not one -- GitHub mints a *different* `sub` claim
+    # depending on whether the calling job declares `environment:`.
+    # cd.yml's apply job has none, so its token carries the plain
+    # `ref:refs/heads/main` form. destroy.yml's job deliberately declares
+    # `environment: destroy-prod` (that's what makes the required-reviewer
+    # gate real, enforced by GitHub server-side) -- which swaps the sub
+    # claim to the `environment:destroy-prod` form instead, dropping the
+    # ref entirely. Real, live failure: destroy.yml's OIDC assume-role
+    # failed outright ("Not authorized to perform
+    # sts:AssumeRoleWithWebIdentity") until this second value was added.
+    # StringEquals against a list is OR-matched, so this only ever widens
+    # trust to these two exact, named caller shapes -- never a wildcard.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/main"]
+      values = [
+        "repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/main",
+        "repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}:environment:destroy-prod",
+      ]
     }
   }
 }
