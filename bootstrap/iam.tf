@@ -367,6 +367,14 @@ data "aws_iam_policy_document" "apply_permissions" {
       "iam:DetachRolePolicy",
       "iam:ListRolePolicies",
       "iam:ListAttachedRolePolicies",
+      # Real, live failure in destroy.yml (first real terraform destroy
+      # run): aws_iam_role's own delete path calls
+      # ListInstanceProfilesForRole first (to confirm nothing is still
+      # attached before allowing the delete) -- this was never granted
+      # because every create/apply run up to now only ever *added* roles,
+      # never deleted one, so this read-before-delete check never fired
+      # until destroy.yml did.
+      "iam:ListInstanceProfilesForRole",
     ]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/sia-*"]
   }
