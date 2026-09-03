@@ -47,7 +47,19 @@ ARG GECKODRIVER_SHA256=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde2
 # (confirmed via `rpm -qf` all three belong to mesa-dri-drivers itself).
 # Verified after trimming: Firefox still launches and completes a full
 # Selenium session in this image (build_driver() smoke test).
-RUN dnf install -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
+# dnf upgrade -y fused into this same RUN, before install: the base image
+# (public.ecr.aws/lambda/python:3.12) ships whatever Amazon Linux 2023
+# packages were current at its own build time, which lag behind AL2023's
+# rolling security updates. Real, live finding via the Trivy PR gate: 3
+# HIGH CVEs (libsoup3 CVE-2026-15711, openssl-fips-provider-latest and
+# openssl-snapsafe-libs both CVE-2026-14456), all already "fixed" upstream
+# -- a plain upgrade, not a workaround. Runs before the explicit installs
+# below so the newly-pulled packages start from patched versions too, and
+# stays fused (not a later RUN) for the same reason cleanup below is fused:
+# an upgrade in a later layer doesn't shrink or replace the earlier layer's
+# bytes, it only adds more on top.
+RUN dnf upgrade -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
+    && dnf install -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs \
       tar xz gzip findutils gtk3 libXt dbus-glib mesa-libgbm alsa-lib \
     && dnf clean all \
     && rm -rf /var/cache/dnf \
