@@ -1,0 +1,111 @@
+# Manual, admin-only teardown of environments/prod. Never runs on a push --
+# workflow_dispatch only, and gated twice over, deliberately redundant:
+#
+#   1. `guard` job: hard-fails unless github.actor is ADMIN_LOGIN. This is
+#      a cheap, fast, legible rejection -- but github.actor is caller-visible
+#      context, not itself an access-control primitive, so it's a first
+#      filter, not the real gate.
+#   2. `destroy` job: targets the `destroy-prod` GitHub environment, which
+#      carries a required-reviewer protection rule (ADMIN_LOGIN only,
+#      configured in repo settings, not in this file -- environments can't
+#      be fully declared in workflow YAML). GitHub itself blocks the job
+#      until that reviewer approves, regardless of who dispatched the run
+#      or what the workflow file says. This is the actual enforcement.
+#
+# A third guard is a typed confirmation phrase on the dispatch input, so an
+# admin fat-fingering "Run workflow" on the wrong repo/branch doesn't destroy
+# prod by accident.
+#
+# Reuses AWS_APPLY_ROLE_ARN (same role cd.yml's apply job assumes) rather
+# than a separate destroy role: bootstrap/iam.tf already grants that role
+# wildcard CRUD scoped to sia-* resources per service (lambda:*, ssm:*,
+# scheduler:*, ses:*/sesv2:*, plus explicit S3/IAM/CloudWatch Delete*
+# actions) -- verified by reading bootstrap/iam.tf before writing this
+# workflow, not assumed. No new IAM grant needed for destroy specifically.
+name: destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy-prod" (exact) to confirm permanent destruction of environments/prod.'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.11.4"
+  # Repo owner/admin login. Update this if ownership ever changes.
+  ADMIN_LOGIN: estanixx
+
+jobs:
+  guard:
+    name: guard (admin actor + confirmation phrase)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-admin actor
+        run: |
+          if [ "${{ github.actor }}" != "${{ env.ADMIN_LOGIN }}" ]; then
+            echo "::error::destroy may only be dispatched by ${{ env.ADMIN_LOGIN }}; actor was ${{ github.actor }}."
+            exit 1
+          fi
+
+      - name: Reject wrong confirmation phrase
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "destroy-prod" ]; then
+            echo "::error::confirm input must be exactly 'destroy-prod' (got '${{ github.event.inputs.confirm }}')."
+            exit 1
+          fi
+
+  destroy:
+    name: destroy (environments/prod)
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Real enforcement point: GitHub blocks this job on required-reviewer
+    # approval for the `destroy-prod` environment (repo Settings >
+    # Environments -- configure ADMIN_LOGIN as the sole required reviewer).
+    environment: destroy-prod
+    # Same lock-serialization group as cd.yml/pr.yml -- a destroy racing a
+    # concurrent plan/apply against the same S3-native state lock must
+    # queue, not collide.
+    concurrency:
+      group: iac-terraform-state
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (apply role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init (environments/prod)
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: ./scripts/tf-init.sh
+
+      # image_tag only needs to satisfy the variable's type -- destroy never
+      # pulls or references the image itself, just the resources that
+      # (used to) point at one.
+      - name: terraform destroy (environments/prod)
+        working-directory: environments/prod
+        env:
+          TF_VAR_lambda_exec_boundary_arn: ${{ vars.LAMBDA_EXEC_BOUNDARY_ARN }}
+          TF_VAR_ecr_repository_url: ${{ vars.ECR_REPOSITORY_URL }}
+          TF_VAR_image_tag: "sha-${{ github.sha }}"
+          TF_VAR_ops_email: ${{ vars.OPS_EMAIL }}
+          TF_VAR_sender_email: ${{ vars.SENDER_EMAIL }}
+        run: terraform destroy -auto-approve -no-color -input=false
